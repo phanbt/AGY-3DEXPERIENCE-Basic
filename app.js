@@ -10,6 +10,7 @@
   const STORAGE_THEME = '3dx_quiz_theme';
   const STORAGE_SOUND = '3dx_quiz_sound';
   const MAX_SHELF_MEDALS = 30;
+  const QUESTION_TIME_SECONDS = 20;
 
   // --------------------------------------------------------------------------
   // DOM References
@@ -40,6 +41,9 @@
     // Active quiz
     questionCounter: document.getElementById('questionCounter'),
     categoryChip: document.getElementById('categoryChip'),
+    timerBadge: document.getElementById('timerBadge'),
+    timerValue: document.getElementById('timerValue'),
+    timerFill: document.getElementById('timerFill'),
     streakBadge: document.getElementById('streakBadge'),
     streakCount: document.getElementById('streakCount'),
     accuracyChip: document.getElementById('accuracyChip'),
@@ -110,6 +114,11 @@
     currentIndex: 0,
     currentOptions: [], // [{ text, isCorrect, eliminated }]
     answeredCurrent: false,
+
+    // Per-question 20s timer
+    timerId: null,
+    timerDeadline: 0,
+    lastTickSec: QUESTION_TIME_SECONDS,
 
     medals: 0,
     answeredCount: 0,
@@ -203,6 +212,13 @@
       playTone(523.25, 0.12, 'sine', 0.07, 0);
       playTone(659.25, 0.12, 'sine', 0.07, 0.08);
       playTone(783.99, 0.2, 'triangle', 0.08, 0.16);
+    },
+    tick() {
+      playTone(840, 0.045, 'sine', 0.04, 0);
+    },
+    timeout() {
+      playTone(310, 0.15, 'sawtooth', 0.05, 0);
+      playTone(220, 0.26, 'sawtooth', 0.05, 0.13);
     },
     finish() {
       playTone(523.25, 0.14, 'triangle', 0.08, 0);
@@ -454,9 +470,123 @@
   }
 
   // --------------------------------------------------------------------------
+  // 20-Second Per-Question Timer
+  // --------------------------------------------------------------------------
+  function stopQuestionTimer() {
+    if (state.timerId !== null) {
+      clearInterval(state.timerId);
+      state.timerId = null;
+    }
+    if (dom.timerBadge) {
+      dom.timerBadge.classList.remove('is-danger');
+    }
+  }
+
+  function updateTimerUI(remainingMs) {
+    const clampedMs = Math.max(0, remainingMs);
+    const totalMs = QUESTION_TIME_SECONDS * 1000;
+    const displaySec = Math.ceil(clampedMs / 1000);
+    const pct = (clampedMs / totalMs) * 100;
+
+    dom.timerValue.textContent = `${displaySec}s`;
+    dom.timerFill.style.width = `${pct}%`;
+
+    const isDanger = displaySec <= 5;
+    const isWarning = !isDanger && displaySec <= 8;
+
+    dom.timerBadge.classList.toggle('is-warning', isWarning);
+    dom.timerBadge.classList.toggle('is-danger', isDanger);
+    dom.timerFill.classList.toggle('is-warning', isWarning);
+    dom.timerFill.classList.toggle('is-danger', isDanger);
+
+    if (displaySec < state.lastTickSec && displaySec >= 1 && displaySec <= 5) {
+      sfx.tick();
+    }
+    state.lastTickSec = displaySec;
+  }
+
+  function startQuestionTimer() {
+    stopQuestionTimer();
+    const totalMs = QUESTION_TIME_SECONDS * 1000;
+    state.timerDeadline = Date.now() + totalMs;
+    state.lastTickSec = QUESTION_TIME_SECONDS;
+    updateTimerUI(totalMs);
+
+    state.timerId = setInterval(() => {
+      if (!state.active || state.answeredCurrent) {
+        stopQuestionTimer();
+        return;
+      }
+      const remainingMs = state.timerDeadline - Date.now();
+      if (remainingMs <= 0) {
+        updateTimerUI(0);
+        handleTimeExpired();
+      } else {
+        updateTimerUI(remainingMs);
+      }
+    }, 100);
+  }
+
+  function handleTimeExpired() {
+    if (!state.active || state.answeredCurrent) return;
+    stopQuestionTimer();
+
+    state.answeredCurrent = true;
+    state.answeredCount += 1;
+    state.streak = 0;
+
+    const q = state.deck[state.currentIndex];
+    const correctIndex = state.currentOptions.findIndex((o) => o.isCorrect);
+
+    sfx.timeout();
+
+    state.history.push({
+      question: q.question,
+      category: q.category,
+      selectedText: 'Time expired (20s)',
+      correctText: state.currentOptions[correctIndex].text,
+      isCorrect: false,
+      explanation: q.explanation
+    });
+
+    const buttons = dom.optionsGrid.querySelectorAll('.option-btn');
+    buttons.forEach((btn, idx) => {
+      btn.disabled = true;
+      const statusEl = btn.querySelector('.option-status');
+      if (idx === correctIndex) {
+        btn.classList.add('is-correct');
+        statusEl.textContent = 'Correct';
+      } else if (!state.currentOptions[idx].eliminated) {
+        btn.classList.add('is-dimmed');
+      }
+    });
+
+    const pct = Math.round((state.answeredCount / state.deck.length) * 100);
+    dom.progressFill.style.width = `${pct}%`;
+    const acc = Math.round((state.medals / state.answeredCount) * 100);
+    dom.accuracyChip.textContent = `${acc}% accuracy`;
+    dom.streakBadge.hidden = true;
+
+    dom.feedbackPanel.classList.remove('is-correct');
+    dom.feedbackPanel.classList.add('is-wrong');
+    dom.feedbackIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2.5 1.5"></path><path d="M9 2h6"></path></svg>`;
+    dom.feedbackHeadline.textContent = `Time's up! Correct answer is ${LETTERS[correctIndex]}`;
+    dom.medalEarnedPill.hidden = true;
+    dom.feedbackExplanation.textContent = q.explanation;
+
+    const isLast = state.currentIndex >= state.deck.length - 1;
+    dom.nextQuestionLabel.textContent = isLast ? 'See Final Medals' : 'Next Question';
+    dom.feedbackPanel.hidden = false;
+
+    updateJokerButtonsUI();
+    dom.nextQuestionBtn.focus({ preventScroll: true });
+  }
+
+  // --------------------------------------------------------------------------
   // Start / Restart Game Flow
   // --------------------------------------------------------------------------
   function startNewGame() {
+    stopQuestionTimer();
     const pool = getFilteredPool();
     const count = Math.min(state.selectedLength, pool.length);
 
@@ -540,6 +670,7 @@
     });
 
     updateJokerButtonsUI();
+    startQuestionTimer();
   }
 
   // --------------------------------------------------------------------------
@@ -601,6 +732,7 @@
     const chosen = state.currentOptions[selectedIndex];
     if (!chosen || chosen.eliminated) return;
 
+    stopQuestionTimer();
     state.answeredCurrent = true;
     state.answeredCount += 1;
 
@@ -741,6 +873,7 @@
   }
 
   function finishGame(stoppedEarly) {
+    stopQuestionTimer();
     state.active = false;
     showScreen('summary');
 
@@ -894,6 +1027,7 @@
     });
 
     dom.summarySetupBtn.addEventListener('click', () => {
+      stopQuestionTimer();
       state.active = false;
       state.medals = 0;
       updateMedalUI(false);

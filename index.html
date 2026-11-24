@@ -27,7 +27,7 @@
         </div>
         <div class="brand-text">
           <h1 class="brand-title">Who wants to become 3DEXPERIENCE Champion</h1>
-          <p class="brand-subtitle">Basic Knowledge Challenge &middot; 105-Question Bank</p>
+          <p class="brand-subtitle">Basic Knowledge Challenge &middot; 105-Question Bank &middot; 20s / Question</p>
         </div>
       </div>
 
@@ -166,6 +166,14 @@
             <span id="categoryChip" class="category-chip">Platform &amp; 3DCompass</span>
           </div>
           <div class="quiz-meta-right">
+            <span id="timerBadge" class="timer-badge" role="timer" aria-live="off" title="Time remaining for this question">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="13" r="8"></circle>
+                <path d="M12 9v4l2.5 1.5"></path>
+                <path d="M9 2h6"></path>
+              </svg>
+              <span id="timerValue">20s</span>
+            </span>
             <span id="streakBadge" class="streak-badge" hidden>
               <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
               <span id="streakCount">0</span> streak
@@ -176,6 +184,10 @@
 
         <div class="progress-track" aria-hidden="true">
           <div id="progressFill" class="progress-fill" style="width: 0%;"></div>
+        </div>
+
+        <div class="timer-bar-wrap" aria-hidden="true">
+          <div id="timerFill" class="timer-bar-fill" style="width: 100%;"></div>
         </div>
 
         <!-- Jokers Bar -->
